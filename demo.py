@@ -7,10 +7,11 @@ import torch
 import lietorch
 import cv2
 import os
-import glob 
+import glob
 import time
 import argparse
 
+from functools import partial
 from torch.multiprocessing import Process
 from droid import Droid
 
@@ -55,6 +56,59 @@ def image_stream(imagedir, calib, stride):
 
         yield t, image[None], intrinsics
 
+def stereo_image_stream(datapath, right_data_path, orb_calib_file, image_size=[320, 512], stride=1):
+    """ image generator """
+
+    # GUIDANCE: For a different dataset, replace the following blocks with the appropriate camera parameters
+    K_l = np.array([762.722, 0.0, 640.0, 0.0, 762.722, 360.0, 0.000000, 0.000000, 1.000000]).reshape(3, 3)
+    d_l = np.array([0.0, 0.0, 0.0, 0.0])
+    R_l = np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]).reshape(3, 3)
+    P_l = np.array([762.722, 0.0, 640.0, 0.0, 0.0, 762.722, 360.0, 0.000000, 0.0, 0.0, 1.0, 0.0]).reshape(3,4)
+
+    K_r = np.array([762.722, 0.0, 640.0, 0.0, 762.722, 360.0, 0.000000, 0.000000, 1.000000]).reshape(3, 3)
+    d_r = np.array([0.0, 0.0, 0.0, 0.0])
+    R_r = np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]).reshape(3, 3)
+    P_r = np.array([762.722, 0.0, 640.0, -152.5444, 0.0, 762.722, 360.0, 0.000000, 0.0, 0.0, 1.0, 0.0]).reshape(3, 4)
+    
+    intrinsics_vec = [762.722, 762.722, 640.0, 360.0] # (fx fy cx cy)
+    # End of dataset specific code -----------------------------------------------------------------------------
+
+    base_images_left = sorted(os.listdir(datapath))[::stride]
+    base_images_right = sorted(os.listdir(right_data_path))[::stride]
+
+    images_left = [os.path.join(datapath, leftFileName) for leftFileName in base_images_left]
+    images_right = [os.path.join(right_data_path, rightFileName) for rightFileName in base_images_right]
+
+    map_l = None
+
+    for t, (imgL, imgR) in enumerate(zip(images_left, images_right)):
+
+        if not os.path.isfile(imgR):
+            continue
+
+        leftImg = cv2.imread(imgL)
+
+        h0, w0, _ = leftImg.shape
+
+        if (map_l is None):
+            map_l = cv2.initUndistortRectifyMap(K_l, d_l, R_l, P_l[:3, :3], (w0, h0), cv2.CV_32F)
+            map_r = cv2.initUndistortRectifyMap(K_r, d_r, R_r, P_r[:3, :3], (w0, h0), cv2.CV_32F)
+
+        images = [cv2.remap(leftImg, map_l[0], map_l[1], interpolation=cv2.INTER_LINEAR)]
+        images += [cv2.remap(cv2.imread(imgR), map_r[0], map_r[1], interpolation=cv2.INTER_LINEAR)]
+
+        images = torch.from_numpy(np.stack(images, 0))
+        images = images.permute(0, 3, 1, 2).to("cuda:0", dtype=torch.float32)
+        images = F.interpolate(images, image_size, mode="bilinear", align_corners=False)
+
+        intrinsics = torch.as_tensor(intrinsics_vec).cuda()
+        intrinsics[0] *= image_size[1] / w0
+        intrinsics[1] *= image_size[0] / h0
+        intrinsics[2] *= image_size[1] / w0
+        intrinsics[3] *= image_size[0] / h0
+
+        yield stride * t, images, intrinsics
+
 
 def save_reconstruction(droid, reconstruction_path):
 
@@ -80,6 +134,7 @@ def save_reconstruction(droid, reconstruction_path):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--imagedir", type=str, help="path to image directory")
+    parser.add_argument("--right_imagedir", default=None, help="optional (supply for stereo), path to directory for right images")
     parser.add_argument("--calib", type=str, help="path to calibration file")
     parser.add_argument("--t0", default=0, type=int, help="starting frame")
     parser.add_argument("--stride", default=3, type=int, help="frame stride")
@@ -87,7 +142,7 @@ if __name__ == '__main__':
     parser.add_argument("--weights", default="droid.pth")
     parser.add_argument("--buffer", type=int, default=512)
     parser.add_argument("--image_size", default=[240, 320])
-    parser.add_argument("--disable_vis", action="store_true")
+    parser.add_argument("--disable_vis", action="store_false")
 
     parser.add_argument("--beta", type=float, default=0.3, help="weight for translation / rotation components of flow")
     parser.add_argument("--filter_thresh", type=float, default=2.4, help="how much motion before considering new keyframe")
@@ -105,7 +160,13 @@ if __name__ == '__main__':
     parser.add_argument("--reconstruction_path", help="path to saved reconstruction")
     args = parser.parse_args()
 
-    args.stereo = False
+
+    if (args.right_imagedir is None):
+        args.stereo = False
+        imgStreamFunc = partial(image_stream, imagedir=args.imagedir, calib=args.calib, stride=args.stride)
+    else:
+        args.stereo = True
+        imgStreamFunc = partial(stereo_image_stream, datapath=args.imagedir, right_data_path=args.right_imagedir, orb_calib_file=args.calib, stride=args.stride)
     torch.multiprocessing.set_start_method('spawn')
 
     droid = None
@@ -115,7 +176,7 @@ if __name__ == '__main__':
         args.upsample = True
 
     tstamps = []
-    for (t, image, intrinsics) in tqdm(image_stream(args.imagedir, args.calib, args.stride)):
+    for (t, image, intrinsics) in tqdm(imgStreamFunc()):
         if t < args.t0:
             continue
 
@@ -125,10 +186,12 @@ if __name__ == '__main__':
         if droid is None:
             args.image_size = [image.shape[2], image.shape[3]]
             droid = Droid(args)
-        
+
         droid.track(t, image, intrinsics=intrinsics)
 
     if args.reconstruction_path is not None:
         save_reconstruction(droid, args.reconstruction_path)
 
-    traj_est = droid.terminate(image_stream(args.imagedir, args.calib, args.stride))
+    print("Initiating terminate function")
+    traj_est = droid.terminate(imgStreamFunc())
+    print("Done with terminate function")
