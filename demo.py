@@ -63,11 +63,13 @@ def stereo_image_stream(datapath, right_data_path, orb_calib_file, image_size=[3
     K_l = np.array([762.722, 0.0, 640.0, 0.0, 762.722, 360.0, 0.000000, 0.000000, 1.000000]).reshape(3, 3)
     d_l = np.array([0.0, 0.0, 0.0, 0.0])
     R_l = np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]).reshape(3, 3)
+    # Parameters from left camera frame to base frame (i.e. itself)
     P_l = np.array([762.722, 0.0, 640.0, 0.0, 0.0, 762.722, 360.0, 0.000000, 0.0, 0.0, 1.0, 0.0]).reshape(3,4)
 
     K_r = np.array([762.722, 0.0, 640.0, 0.0, 762.722, 360.0, 0.000000, 0.000000, 1.000000]).reshape(3, 3)
     d_r = np.array([0.0, 0.0, 0.0, 0.0])
     R_r = np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]).reshape(3, 3)
+    # Parameters from right camera frame to base frame (i.e. left frame)
     P_r = np.array([762.722, 0.0, 640.0, -152.5444, 0.0, 762.722, 360.0, 0.000000, 0.0, 0.0, 1.0, 0.0]).reshape(3, 4)
     
     intrinsics_vec = [762.722, 762.722, 640.0, 360.0] # (fx fy cx cy)

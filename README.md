@@ -33,7 +33,7 @@ To run the code you will need ...
 ## Getting Started
 1. Clone the repo using the `--recursive` flag
 ```Bash
-git clone --recursive https://github.com/princeton-vl/DROID-SLAM.git
+git clone --recursive https://github.com/spsingh37/DROID-SLAM.git
 ```
 
 2. Creating a new anaconda environment using the provided .yaml file. Use `environment_novis.yaml` to if you do not want to use the visualization
@@ -60,7 +60,7 @@ python setup.py install
 
 Run the demo on any of the samples (all demos can be run on a GPU with 11G of memory). While running, press the "s" key to increase the filtering threshold (= more points) and "a" to decrease the filtering threshold (= fewer points). To save the reconstruction with full resolution depth maps use the `--reconstruction_path` flag.
 
-
+# Monocular
 ```Python
 python demo.py --imagedir=data/abandonedfactory --calib=calib/tartan.txt --stride=2
 ```
@@ -81,6 +81,11 @@ python demo.py --imagedir=data/mav0/cam0/data --calib=calib/euroc.txt --t0=150
 python demo.py --imagedir=data/rgbd_dataset_freiburg3_cabinet/rgb --calib=calib/tum3.txt
 ```
 
+# Stereo
+- Currently calibration params specified in demo.py itself
+```Python
+python demo.py --imagedir=data/mav0/cam0/data --right_imagedir=data/mav0/cam1/data
+```
 
 **Running on your own data:** All you need is a calibration file. Calibration files are in the form 
 ```
