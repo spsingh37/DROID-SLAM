@@ -1,4 +1,4 @@
-# DROID-SLAM
+# DROID-SLAM (with stereo fix)
 
 
 <!-- <center><img src="misc/DROID.png" width="640" style="center"></center> -->
